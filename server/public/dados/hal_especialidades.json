@@ -1,0 +1,108 @@
+{
+  "Especialidades Médicas": {
+    "principais": [
+      {
+        "nome": "Angiologia e Cirurgia Vascular",
+        "sinonimos": []
+      },
+      {
+        "nome": "Cardiologia",
+        "sinonimos": []
+      },
+      {
+        "nome": "Cirurgia Geral",
+        "sinonimos": []
+      },
+      {
+        "nome": "Cirurgia Plástica, Reconstrutiva e Estética",
+        "sinonimos": []
+      },
+      {
+        "nome": "Dermatologia",
+        "sinonimos": []
+      },
+      {
+        "nome": "Endocrinologia",
+        "sinonimos": []
+      },
+      {
+        "nome": "Medicina Física e de Reabilitação",
+        "sinonimos": ["Fisiatria", "Fisiatra", "Fisioterapia"]
+      },
+      {
+        "nome": "Gastrenterologia",
+        "sinonimos": []
+      },
+      {
+        "nome": "Ginecologia e Obstetrícia",
+        "sinonimos": []
+      },
+      {
+        "nome": "Imunoalergologia",
+        "sinonimos": []
+      },
+      {
+        "nome": "Medicina Dentária",
+        "sinonimos": []
+      },
+      {
+        "nome": "Medicina Interna",
+        "sinonimos": []
+      },
+      {
+        "nome": "Neurologia",
+        "sinonimos": []
+      },
+      {
+        "nome": "Oftalmologia",
+        "sinonimos": []
+      },
+      {
+        "nome": "Ortopedia",
+        "sinonimos": []
+      },
+      {
+        "nome": "Otorrinolaringologia",
+        "sinonimos": []
+      },
+      {
+        "nome": "Pediatria",
+        "sinonimos": []
+      },
+      {
+        "nome": "Pneumologia e Alergologia Respiratória",
+        "sinonimos": ["Pneumologia", "Alergologia"]
+      },
+      {
+        "nome": "Psicologia",
+        "sinonimos": []
+      },
+      {
+        "nome": "Psiquiatria",
+        "sinonimos": []
+      },
+      {
+        "nome": "Reumatologia",
+        "sinonimos": []
+      },
+      {
+        "nome": "Urologia",
+        "sinonimos": []
+      }
+    ],
+    "outro_tipo": [
+      {
+        "nome": "Nutrição",
+        "sinonimos": ["Nutricionista"]
+      },
+      {
+        "nome": "Podologia",
+        "sinonimos": []
+      },
+      {
+        "nome": "Terapia da Fala",
+        "sinonimos": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="pt">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Elvira Chat</title>
+  <link rel="stylesheet" href="estilo.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+</head>
+
+<body>
+  <div id="chatbot-header" style="
+        background-color: #26a7b5;
+        color: white;
+        padding: 12px 16px;
+        font-size: 18px;
+        font-weight: bold;
+        display: flex;
+        justify-content: left;
+        align-items: center;
+        border-top-left-radius: 8px;
+        border-top-right-radius: 8px;
+      ">
+    <img src="LOGO_HAL.svg" alt="HAL_LOGO" style="height: 28px" />
+    <span style="margin-left: 12px">Elvira</span>
+  </div>
+  <div id="chatbot-messages"></div>
+  <div id="chatbot-input">
+    <input type="text" id="user-input" placeholder="Escreva aqui..." />
+    <button id="enviar-mensagem">➤</button>
+  </div>
+
+  <script>
+    const BASE_URL = "http://192.168.11.83:3001";
+    const messagesContainer = document.getElementById("chatbot-messages");
+    const userInput = document.getElementById("user-input");
+    const sendButton = document.getElementById("enviar-mensagem");
+
+    const chatState = {
+      currentStep: "INITIAL_GREETING",
+      bookingType: null,
+      bookingDetails: {},
+      lastMentioned: { type: null, value: null },
+      historico: [],
+    };
+
+    let allDoctors = [];
+    let allExams = [];
+    let halContactos = {};
+    let allAgreements = [];
+    let halExamesAnalises = [];
+    let halServicos = {};
+    let halSigic = {};
+
+    const validSpecialties = [
+      "angiologia e cirurgia vascular",
+      "cardiologia",
+      "cirurgia geral",
+      "cirurgia plástica, reconstrutiva e estética",
+      "dermatologia",
+      "endocrinologia",
+      "medicina física e de reabilitação",
+      "fisiatria",
+      "fisioterapia",
+      "gastrenterologia",
+      "ginecologia e obstetrícia",
+      "imunoalergologia",
+      "medicina dentária",
+      "medicina interna",
+      "oftalmologia",
+      "ortopedia",
+      "otorrinolaringologia",
+      "pediatria",
+      "pneumologia",
+      "alergologia respiratória",
+      "psicologia",
+      "psiquiatria",
+      "reumatologia",
+      "urologia",
+      "nutrição",
+      "podologia",
+      "terapia da fala",
+      "consulta do viajante",
+      "consulta do viajante (medicina do viajante)",
+      "medicina do viajante",
+    ];
+
+    async function loadData() {
+      try {
+        console.log("Início do carregamento de dados...");
+
+        const [
+          examesRes,
+          medicosRes,
+          contactosRes,
+          acordosRes,
+          examesAnalisesRes,
+          servicosRes,
+          sigicTextRes,
+        ] = await Promise.all([
+          fetch("dados/exames.json"),
+          fetch("dados/medicos.json"),
+          fetch("dados/hal_contactos.json"),
+          fetch("dados/hal_acordos.json"),
+          fetch("dados/hal_exames_analises.json"),
+          fetch("dados/hal_servicos.json"),
+          fetch("dados/hal_sigic.txt"),
+        ]);
+
+        console.log(
+          "Todos os recursos foram fetcheados. A processar JSONs..."
+        );
+
+        allExams = await examesRes.json();
+        console.log("✅ exames.json carregado.");
+
+        allDoctors = await medicosRes.json();
+        console.log("✅ medicos.json carregado.");
+
+        halContactos = await contactosRes.json();
+        console.log("✅ hal_contactos.json carregado.");
+
+        // --- Processamento de hal_acordos.json ---
+        const acordosData = await acordosRes.json();
+        // Acede à chave principal "Acordos e Protocolos"
+        const acordosCategorias = acordosData["Acordos e Protocolos"];
+
+        // Percorre as categorias (Seguros de Saúde, Subsistemas, etc.)
+        for (const categoria in acordosCategorias) {
+          const itens = acordosCategorias[categoria];
+          if (Array.isArray(itens)) {
+            // Se for um array direto de itens
+            allAgreements.push(...itens.map((item) => normalizeText(item)));
+          } else if (typeof itens === "object" && itens !== null) {
+            // Se for um objeto aninhado (ex: Seguradoras)
+            for (const subCategoria in itens) {
+              allAgreements.push(
+                ...itens[subCategoria].map((item) => normalizeText(item))
+              );
+            }
+          }
+        }
+        console.log("✅ hal_acordos.json carregado e processado.");
+
+        const examesAnalisesData = await examesAnalisesRes.json();
+
+        const examesAnalisesCategorias =
+          examesAnalisesData["Exames e Análises"];
+
+        // Percorre as categorias (Imagiologia, Gastrenterologia, etc.)
+        for (const categoria in examesAnalisesCategorias) {
+          const itens = examesAnalisesCategorias[categoria];
+          if (Array.isArray(itens)) {
+            halExamesAnalises.push(
+              ...itens.map((item) => normalizeText(item))
+            );
+          }
+        }
+        console.log("✅ hal_exames_analises.json carregado e processado.");
+
+        halServicos = await servicosRes.json();
+        console.log("✅ hal_servicos.json carregado.");
+
+        console.log("JSONs processados. A processar hal_sigic.txt...");
+
+        // Processa o ficheiro hal_sigic.txt
+        const sigicFullText = await sigicTextRes.text();
+        console.log("Conteúdo de hal_sigic.txt obtido.");
+
+        const sections = sigicFullText
+          .split(/(^#\s*.*$)/gm)
+          .filter((s) => s.trim() !== "");
+        console.log("Texto SIGIC dividido em secções.");
+
+        let currentSection = "";
+        sections.forEach((part) => {
+          if (part.startsWith("#")) {
+            currentSection = normalizeText(part.replace(/^#\s*/, "").trim());
+          } else if (currentSection) {
+            halSigic[currentSection] =
+              (halSigic[currentSection] || "") + part.trim() + "\n";
+          }
+        });
+
+        for (const key in halSigic) {
+          halSigic[key] = halSigic[key].trim();
+        }
+        console.log("✅ hal_sigic.txt processado.");
+
+        console.log("Todos os dados carregados com sucesso!");
+        console.log("Médicos:", allDoctors.length);
+        console.log("Exames:", allExams.length);
+        console.log("Contactos:", halContactos);
+        console.log("Acordos (total):", allAgreements.length, allAgreements);
+        console.log(
+          "Exames/Análises (total):",
+          halExamesAnalises.length,
+          halExamesAnalises
+        );
+        console.log("Serviços:", halServicos);
+        console.log("Informações SIGIC (carregado do TXT):", halSigic);
+        return true;
+      } catch (error) {
+        console.error("⚠️ ERRO CRÍTICO NO CARREGAMENTO DE DADOS:", error);
+        appendMessage(
+          "Erro ao carregar dados. Tente novamente mais tarde.",
+          "bot"
+        );
+        return false;
+      }
+    }
+
+    sendButton.addEventListener("click", sendMessage);
+    userInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+    console.log("🧪 Eventos adicionados ao botão e ao input");
+
+    function appendMessage(text, sender) {
+      const msgDiv = document.createElement("div");
+      msgDiv.className = `message ${sender}`;
+      msgDiv.innerHTML = text.replace(/\n/g, "<br>");
+      messagesContainer.appendChild(msgDiv);
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      chatState.historico.push({ role: sender, content: text });
+    }
+
+    function showTypingIndicator() {
+      const typing = document.createElement("div");
+      typing.className = "message bot typing";
+      typing.textContent = "A escrever...";
+      messagesContainer.appendChild(typing);
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      return typing;
+    }
+
+    function removeTypingIndicator(indicator) {
+      if (indicator) indicator.remove();
+    }
+
+    function normalizeText(str) {
+      if (typeof str !== "string") return "";
+      return str
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
+        .replace(/\b(dr|dra|drª|prof|professor|professora)\b/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function isValidName(name) {
+      return name.length >= 3 && !/\d/.test(name);
+    }
+
+    function isValidDate(dateStr) {
+      const regex = /^(\d{2})[-./](\d{2})[-./](\d{4})$/;
+      const match = dateStr.match(regex);
+      if (!match) return false;
+      const [_, d, m, y] = match;
+      const dt = new Date(`${y}-${m}-${d}`);
+      return (
+        dt &&
+        dt.getDate() == d &&
+        dt.getMonth() + 1 == m &&
+        dt.getFullYear() == y
+      );
+    }
+
+    function isValidPhoneNumber(phoneNum) {
+      const cleaned = phoneNum.replace(/\D/g, "");
+      return /^\+?\d{8,15}$/.test(cleaned);
+    }
+
+    function identifyIntent(text) {
+      const normText = normalizeText(text);
+      if (/falar com.*(assistente|humano|alguem)/i.test(normText))
+        return "ASSISTANT_REQUEST";
+      if (/(quero|marcar|consulta|exame|agendar)/i.test(normText))
+        return "BOOKING_INTENT";
+      if (
+        /saber|informacoes|info|informação|como|onde|fazem|qual|contactos|numeros/i.test(
+          normText
+        )
+      )
+        // Adicionei 'contactos', 'numeros', 'info', 'informação'
+        return "INFORMATION_INTENT";
+      if (
+        /^(sim|s|ok|pode ser|confirmar|afirmativo|correto)$/i.test(normText)
+      )
+        // Adicionei s, afirmativo, correto
+        return "CONFIRMATION_YES";
+      if (/^(nao|não|n|não quero|negar|cancelar)$/i.test(normText))
+        // Adicionei n, cancelar
+        return "CONFIRMATION_NO";
+      return "UNKNOWN";
+    }
+
+    function extractEntities(text) {
+      const e = {
+        doctor: null,
+        specialty: null,
+        exam: null,
+        protocol: null,
+        location: false,
+        consultationType: null,
+        agreement: null,
+        examAnalysis: null,
+        contactService: null,
+        sigicInfo: false,
+        sigicConditions: false,
+        sigicSpecialties: false,
+        serviceInfo: null,
+        generalGreeting: false,
+        doctorNotFoundButSpecialtyMentioned: false,
+        requestForContact: false,
+        requestAllServices: false,
+        requestUrgencyInfo: false,
+      };
+      const originalTextLower = text.toLowerCase();
+      const normalizedText = normalizeText(text);
+
+      if (
+        /(ol[aá]|bom dia|boa tarde|boa noite|ola|oi)/i.test(originalTextLower)
+      ) {
+        e.generalGreeting = true;
+      }
+
+      if (
+        /(que servi[çc]os|quais os servi[çc]os|lista de servi[çc]os|servi[çc]os dispon[ií]veis)/i.test(
+          normalizedText
+        )
+      ) {
+        e.requestAllServices = true;
+      }
+
+      if (/(urg[êe]ncia|emerg[êe]ncia)/i.test(normalizedText)) {
+        e.requestUrgencyInfo = true;
+      }
+
+      // Prioridade para pedidos de contacto
+      if (
+        /(contacto|numero|telefone|ligar|contactar)/i.test(normalizedText)
+      ) {
+        e.requestForContact = true; // Indica que o utilizador quer um contacto
+        for (const serviceKey in halContactos) {
+          if (normalizedText.includes(normalizeText(serviceKey))) {
+            e.contactService = serviceKey;
+            break;
+          }
+        }
+      }
+
+      if (
+        normalizedText.includes(normalizeText("especialidades com acordo")) ||
+        normalizedText.includes(normalizeText("especialidades sigic"))
+      ) {
+        e.sigicSpecialties = true;
+        e.sigicInfo = true;
+      } else if (
+        normalizedText.includes(normalizeText("condicoes")) ||
+        normalizedText.includes(normalizeText("vantagens")) ||
+        normalizedText.includes(normalizeText("porque escolher")) ||
+        normalizedText.includes(normalizeText("razoes"))
+      ) {
+        e.sigicConditions = true;
+        e.sigicInfo = true;
+      } else if (
+        normalizedText.includes(normalizeText("sigic")) ||
+        normalizedText.includes(normalizeText("vale cirurgia"))
+      ) {
+        e.sigicInfo = true;
+      }
+
+      for (const serviceName in halServicos) {
+        if (normalizedText.includes(normalizeText(serviceName))) {
+          if (
+            normalizeText(serviceName).length > 3 ||
+            !e.requestAllServices
+          ) {
+            e.serviceInfo = serviceName;
+            break;
+          }
+        }
+      }
+
+      for (const agreement of allAgreements) {
+        // Certifique-se que allAgreements está populado e normalizado em loadData
+        if (normalizedText.includes(agreement)) {
+          // 'agreement' já deve estar normalizado
+          e.agreement = agreement;
+          e.protocol = agreement;
+          break;
+        }
+      }
+
+      // Se não for um pedido explícito de contacto por um serviço específico, então procurar por exames
+      if (!e.contactService && !e.requestForContact) {
+        for (const examAnalise of halExamesAnalises) {
+          if (normalizedText.includes(examAnalise)) {
+            e.examAnalysis = examAnalise;
+            if (!e.exam) e.exam = examAnalise;
+            e.consultationType = "exam";
+            break;
+          }
+        }
+        if (!e.exam) {
+          for (const ex of allExams) {
+            // allExams já deve estar normalizado
+            if (normalizedText.includes(normalizeText(ex))) {
+              // normaliza ex aqui se não estiver já
+              e.exam = ex;
+              e.consultationType = "exam";
+              break;
+            }
+          }
+        }
+      } else if (
+        e.requestForContact &&
+        !e.contactService &&
+        normalizedText.includes("tac")
+      ) {
+        // Caso específico: "contacto" (contém "tac") mas não achou contactService.
+        // Não fazer nada aqui para evitar confundir com exame TAC. A lógica de 'provideInformation' tratará 'requestForContact'
+      }
+
+      if (!e.specialty) {
+        for (const s of validSpecialties) {
+          if (normalizedText.includes(normalizeText(s))) {
+            e.specialty = s;
+            break;
+          }
+        }
+      }
+
+      let doctorWasExplicitlyMentioned =
+        originalTextLower.includes("dr.") ||
+        originalTextLower.includes("dra.");
+      for (const d of allDoctors) {
+        // allDoctors.nome e .especialidade precisam ser normalizados para comparação
+        const nomeNormalizado = normalizeText(d.nome);
+        if (normalizedText.includes(nomeNormalizado)) {
+          if (
+            e.specialty &&
+            normalizeText(d.especialidade) !== normalizeText(e.specialty)
+          ) {
+            e.doctor = null; // Conflito
+            console.log(
+              `⚠️ Conflito detetado: Médico "${d.nome}" (${d.especialidade}) não corresponde à especialidade "${e.specialty}" na frase.`
+            );
+          } else {
+            e.doctor = d;
+            e.specialty = d.especialidade; // Autopreencher especialidade do médico
+            e.consultationType = "consultation";
+            break;
+          }
+        }
+      }
+      if (doctorWasExplicitlyMentioned && !e.doctor && !e.specialty) {
+        e.doctorNotFoundButSpecialtyMentioned = true; // Reutilizar esta flag para médico não encontrado
+      } else if (doctorWasExplicitlyMentioned && e.specialty && !e.doctor) {
+      }
+
+      if (/localizacao|morada|onde fica/i.test(normalizedText)) {
+        e.location = true;
+      }
+      return e;
+    }
+
+    async function sendMessage() {
+      const text = userInput.value.trim();
+      if (!text) return;
+
+      appendMessage(text, "user"); // Mostra a mensagem do utilizador na UI
+      userInput.value = ""; // Limpa o campo de input
+
+      const indicator = showTypingIndicator(); // Mostra "A escrever..."
+
+      // Extrai entidades do texto original
+      const entities = extractEntities(text);
+      // Cria uma versão normalizada do texto para algumas comparações e para o fallback
+      const norm = normalizeText(text);
+
+      let response = "";
+
+      // Logs para depuração
+      console.log("DEBUG: User text:", text);
+      console.log(
+        "DEBUG: Entities Detetadas:",
+        JSON.parse(JSON.stringify(entities))
+      );
+      console.log(
+        "DEBUG: Chat State ANTES do processamento:",
+        JSON.parse(JSON.stringify(chatState))
+      );
+
+      // Prioridade 1: Tratar estados específicos do fluxo
+      if (chatState.currentStep === "AWAITING_DOCTOR_CHOICE") {
+        // Esta função lida com a escolha do utilizador após listar médicos de uma especialidade
+        response = await handleDoctorChoice(
+          text,
+          entities,
+          chatState.lastMentioned
+        );
+      }
+      // Prioridade 2: Tratar outros estados de formulário/fluxo de marcação ativo
+      else if (
+        chatState.currentStep !== "AWAITING_INTENT" &&
+        chatState.currentStep !== "INITIAL_GREETING"
+      ) {
+        const intent = identifyIntent(text); // Identificar intenção pode ser útil para 'sim'/'não' em confirmações
+
+        console.log(
+          "DEBUG: Dentro de um fluxo de formulário. CurrentStep:",
+          chatState.currentStep,
+          "Intent:",
+          intent
+        );
+        switch (chatState.currentStep) {
+          case "ASK_NAME":
+            response = handleNameInput(text); // Passa o texto diretamente
+            break;
+          case "ASK_BIRTHDATE":
+            response = handleBirthdateInput(text); // Passa o texto diretamente
+            break;
+          case "ASK_CONTACT":
+            response = handleContactInput(text); // Passa o texto diretamente
+            break;
+          case "ASK_BOOKING_ITEM":
+            // handleBookingItemInput pode precisar de entidades se a resposta for complexa
+            response = handleBookingItemInput(text, entities);
+            break;
+          case "CONFIRM_BOOKING":
+            // handleBookingConfirmation precisa da intenção (CONFIRMATION_YES/NO)
+            response = await handleBookingConfirmation(intent);
+            break;
+          default:
+            console.warn(
+              "DEBUG: Current step não previsto dentro de um fluxo ativo:",
+              chatState.currentStep
+            );
+            // Se um estado inesperado for alcançado a meio de um fluxo, resetar
+            chatState.currentStep = "AWAITING_INTENT";
+            chatState.lastMentioned = {
+              type: null,
+              value: null,
+              specialty: null,
+            };
+            chatState.bookingDetails = {};
+            chatState.bookingType = null;
+            response =
+              "Peço desculpa, ocorreu um pequeno problema e perdi o fio à meada. Podemos recomeçar? Em que posso ajudar?";
+            break;
+        }
+      }
+      // Prioridade 3: Se não está num fluxo ativo, tratar como uma nova intenção geral
+      else {
+        // currentStep é AWAITING_INTENT ou INITIAL_GREETING
+        console.log(
+          "DEBUG: Aguardando intenção geral. CurrentStep:",
+          chatState.currentStep
+        );
+        // 3a. Tenta dar uma resposta informativa direta ou fazer uma pergunta de seguimento
+        response = provideInformation(entities, text);
+        console.log(
+          "DEBUG: Resposta de provideInformation:",
+          `"${response}"`
+        );
+
+        // 3b. Se provideInformation não deu resposta/pergunta direta (retornou ""), processa a intenção
+        if (response === "" || response === undefined) {
+          const intent = identifyIntent(text);
+          console.log(
+            "DEBUG: provideInformation não deu resposta. Intent detectada:",
+            intent
+          );
+          response = await handleInitialIntent(intent, entities, norm);
+        }
+      }
+
+      // Logs finais antes de mostrar a resposta
+      console.log(
+        "DEBUG: Chat State DEPOIS do processamento:",
+        JSON.parse(JSON.stringify(chatState))
+      );
+      console.log("DEBUG: Resposta Final do Bot:", `"${response}"`);
+
+      // Remove o indicador "A escrever..." e mostra a resposta do bot após um pequeno atraso
+      setTimeout(() => {
+        removeTypingIndicator(indicator);
+        if (response) {
+          appendMessage(response, "bot");
+        } else {
+          // Fallback muito genérico se, por alguma falha de lógica, nenhuma resposta foi gerada
+          appendMessage(
+            "Peço desculpa, não consegui processar o seu pedido neste momento. Pode tentar de outra forma?",
+            "bot"
+          );
+          console.error(
+            "ERRO CRÍTICO: A resposta do bot continuou vazia após todo o processamento."
+          );
+        }
+      }, 700); // Atraso de 700ms para simular digitação/processamento
+    }
+
+    async function handleDoctorChoice(
+      userInputText,
+      currentEntities,
+      specialtyContext
+    ) {
+      const normalizedInput = normalizeText(userInputText);
+      let chosenDoctorObject = null;
+
+      // Verifica se o input do utilizador corresponde a um dos médicos que foram listados
+      if (specialtyContext && specialtyContext.doctorsListed) {
+        for (const doctor of specialtyContext.doctorsListed) {
+          if (normalizedInput.includes(normalizeText(doctor.nome))) {
+            chosenDoctorObject = doctor; // Guarda o objeto completo do médico (com nome e especialidade)
+            break;
+          }
+        }
+      }
+
+      // Se um médico foi escolhido pelo nome
+      if (chosenDoctorObject) {
+        console.log(
+          "DEBUG: Utilizador escolheu o médico:",
+          chosenDoctorObject.nome
+        );
+        // Prepara as entidades para iniciar a marcação para este médico específico
+        const bookingEntitiesForDoctor = {
+          doctor: chosenDoctorObject,
+        };
+        // Limpa o contexto anterior para não haver confusão
+        chatState.lastMentioned = {
+          type: null,
+          value: null,
+          specialty: null,
+          doctorsListed: null,
+        };
+        return startBookingProcess(bookingEntitiesForDoctor); // Inicia o fluxo de marcação IMEDIATAMENTE
+      }
+      // Se o utilizador indicou que não tem preferência
+      else if (
+        /(geral|especialidade|sem preferencia|tanto faz|qualquer um|nao importa|indiferente|nao tenho preferencia)/i.test(
+          normalizedInput
+        )
+      ) {
+        console.log(
+          "DEBUG: Utilizador escolheu marcar para a especialidade em geral:",
+          specialtyContext.value
+        );
+        const bookingEntitiesForSpecialty = {
+          specialty: specialtyContext.value, // Usa a especialidade guardada no contexto
+        };
+        chatState.lastMentioned = {
+          type: null,
+          value: null,
+          specialty: null,
+          doctorsListed: null,
+        };
+        return startBookingProcess(bookingEntitiesForSpecialty); // Inicia o fluxo de marcação para a especialidade
+      }
+      // Se a resposta não foi clara
+      else {
+        chatState.currentStep = "AWAITING_DOCTOR_CHOICE"; // Mantém o estado para nova tentativa
+        const doctorsInSpecialtyText = specialtyContext.doctorsListed
+          .map((m) => `- Dr(a). ${m.nome}`)
+          .join("\n");
+        return `Peço desculpa, não consegui identificar um médico ou a sua preferência. Pode indicar o nome de um dos médicos listados para ${specialtyContext.value} ou dizer "sem preferência"?\nMédicos disponíveis:\n${doctorsInSpecialtyText}`;
+      }
+    }
+
+    async function handleInitialIntent(intent, entities, norm) {
+      console.log(
+        "🧪 handleInitialIntent ativada - Intent:",
+        intent,
+        "Entities:",
+        JSON.parse(JSON.stringify(entities)),
+        "LastMentioned:",
+        JSON.parse(JSON.stringify(chatState.lastMentioned))
+      );
+
+      if (intent === "ASSISTANT_REQUEST") {
+        chatState.currentStep = "AWAITING_INTENT"; // Reset step
+        return `Pode contactar-nos pelo número <a href="tel:+351253639035" class="call-button">📞 +351 253 639 035</a>.`;
+      }
+
+      if (intent === "CONFIRMATION_YES" && chatState.lastMentioned.type) {
+        console.log(
+          "🧪 CONFIRMATION_YES com lastMentioned. Iniciando marcação para:",
+          chatState.lastMentioned
+        );
+        const response = startBookingProcess(
+          entities,
+          chatState.lastMentioned
+        ); // Passar entities atuais também
+        // lastMentioned será limpo dentro de startBookingProcess ou após conclusão/cancelamento da marcação.
+        return response;
+      }
+
+      if (intent === "BOOKING_INTENT") {
+        console.log(
+          "🧪 BOOKING_INTENT detetada. Entidades:",
+          JSON.parse(JSON.stringify(entities))
+        );
+        // Se já temos médico, exame ou especialidade na frase inicial
+        if (
+          entities.doctor ||
+          entities.exam ||
+          entities.specialty ||
+          entities.agreement
+        ) {
+          const response = startBookingProcess(entities); // Não usar lastMentioned aqui, pois é uma nova intenção de marcação
+          chatState.lastMentioned = {
+            type: null,
+            value: null,
+            specialty: null,
+          }; // Limpar lastMentioned para intenções de marcação diretas
+          return response;
+        } else {
+          chatState.currentStep = "ASK_BOOKING_ITEM";
+          return "Certo. Para que tipo de marcação precisa de ajuda? É uma consulta (com médico/especialidade específico) ou um exame?";
+        }
+      }
+
+      if (intent === "CONFIRMATION_NO") {
+        let noResponse = "Entendido.";
+        if (chatState.lastMentioned.type) {
+          // Se o "não" foi para uma sugestão de marcação
+          noResponse = "Certo, cancelado. Em que mais posso ajudar?";
+        }
+        chatState.lastMentioned = {
+          type: null,
+          value: null,
+          specialty: null,
+        };
+        chatState.bookingDetails = {};
+        chatState.bookingType = null;
+        chatState.currentStep = "AWAITING_INTENT";
+        return noResponse;
+      }
+
+      if (
+        intent === "INFORMATION_INTENT" &&
+        entities.requestForContact &&
+        !entities.contactService
+      ) {
+        chatState.currentStep = "AWAITING_INTENT";
+        return `Para qual serviço gostaria de saber o contacto? Ou pode usar o nosso número geral <a href="tel:+351253639035" class="call-button">📞 +351 253 639 035</a>.`;
+      }
+
+      console.log(
+        "DEBUG: handleInitialIntent a acionar fetchFallbackResponse para norm:",
+        norm
+      );
+      chatState.currentStep = "AWAITING_INTENT"; // Reset para segurança
+      return await fetchFallbackResponse(norm);
+    }
+
+    function startBookingProcess(entities = {}, confirmedContext = null) {
+      console.log(
+        "🧪 startBookingProcess ativada - Entities:",
+        JSON.parse(JSON.stringify(entities)),
+        "ConfirmedContext:",
+        JSON.parse(JSON.stringify(confirmedContext))
+      );
+
+      // Limpa os detalhes da marcação anterior para garantir um novo fluxo limpo.
+      chatState.bookingDetails = {};
+      chatState.bookingType = null;
+
+      let itemDisplay = ""; // O texto que será mostrado ao utilizador na UI (ex: "a consulta com Dr. X").
+
+      // --- LÓGICA PARA POPULAR bookingDetails CORRETAMENTE ---
+
+      // Prioridade 1: Usar o contexto de uma confirmação anterior (ex: user disse "sim" a uma sugestão).
+      if (confirmedContext && confirmedContext.type) {
+        let itemToBook = confirmedContext.value;
+        switch (confirmedContext.type) {
+          case "doctor":
+            chatState.bookingType = "consultation";
+            chatState.bookingDetails.doctor = itemToBook;
+            chatState.bookingDetails.specialty = confirmedContext.specialty;
+            itemDisplay = `a consulta com Dr(a). ${itemToBook} (${confirmedContext.specialty})`;
+            break;
+          case "specialty":
+            chatState.bookingType = "consultation";
+            chatState.bookingDetails.specialty = itemToBook;
+            itemDisplay = `a consulta de ${itemToBook}`;
+            break;
+          case "exam":
+            chatState.bookingType = "exam";
+            chatState.bookingDetails.exam = itemToBook;
+            itemDisplay = `o exame de ${itemToBook}`;
+            break;
+          case "agreement":
+            chatState.bookingDetails.protocol = itemToBook;
+            chatState.currentStep = "ASK_BOOKING_ITEM";
+            return `Entendido, deseja usar o acordo ${itemToBook}. Seria para uma consulta ou um exame?`;
+        }
+      }
+      // Prioridade 2: Usar as entidades da frase atual (ex: chamado de handleDoctorChoice ou uma marcação direta).
+      else if (entities.doctor) {
+        chatState.bookingType = "consultation";
+        chatState.bookingDetails.doctor = entities.doctor.nome; // GUARDA O NOME DO MÉDICO
+        chatState.bookingDetails.specialty = entities.doctor.especialidade; // GUARDA A ESPECIALIDADE
+        itemDisplay = `a consulta com Dr(a). ${entities.doctor.nome} (${entities.doctor.especialidade})`;
+      } else if (entities.specialty) {
+        chatState.bookingType = "consultation";
+        chatState.bookingDetails.specialty = entities.specialty; // GUARDA A ESPECIALIDADE
+        itemDisplay = `a consulta de ${entities.specialty}`;
+      } else if (entities.exam) {
+        chatState.bookingType = "exam";
+        chatState.bookingDetails.exam = entities.exam; // GUARDA O EXAME
+        itemDisplay = `o exame de ${entities.exam}`;
+      }
+
+      // Se, mesmo após a lógica acima, não for claro o que marcar.
+      if (!itemDisplay) {
+        chatState.currentStep = "ASK_BOOKING_ITEM";
+        return "Que tipo de marcação deseja? Por favor, especifique se é uma consulta (e a especialidade ou médico) ou um exame.";
+      }
+
+      // Guarda uma descrição principal em 'item' para usar no resumo final.
+      // Isto é feito DEPOIS de os outros detalhes já terem sido guardados.
+      chatState.bookingDetails.item = itemDisplay.replace(
+        /^(a consulta com |a consulta de |o exame de )/i,
+        ""
+      );
+
+      chatState.currentStep = "ASK_NAME"; // Próximo passo é pedir o nome do utente.
+
+      console.log(
+        "🧪 Iniciando fluxo de recolha de dados. Detalhes guardados em bookingDetails:",
+        JSON.parse(JSON.stringify(chatState.bookingDetails))
+      );
+
+      console.log(
+        "DEBUG [FIM de startBookingProcess]: bookingDetails agora contém:",
+        JSON.parse(JSON.stringify(chatState.bookingDetails))
+      );
+
+      return `Muito bem. Para agendar ${itemDisplay}, pode indicar-me o seu nome completo, por favor?`;
+    }
+
+    function handleNameInput(name) {
+      if (!isValidName(name))
+        return "O nome indicado não é válido. Escreva o nome completo.";
+      chatState.bookingDetails.nomeCompleto = name;
+      chatState.currentStep = "ASK_BIRTHDATE";
+      return "Indique a sua data de nascimento (DD-MM-AAAA).";
+    }
+
+    function handleBirthdateInput(dob) {
+      if (!isValidDate(dob))
+        return "Formato de data inválido. Use DD-MM-AAAA (ex: 15-04-1985).";
+      chatState.bookingDetails.dataNascimento = dob;
+      chatState.currentStep = "ASK_CONTACT";
+      return "Indique o seu número de telefone (ex: +351912345678).";
+    }
+
+    function handleContactInput(contact) {
+      if (!isValidPhoneNumber(contact))
+        return "Número inválido. Deve incluir apenas números e indicativo.";
+      chatState.bookingDetails.contactoTelefonico = contact;
+      chatState.currentStep = "CONFIRM_BOOKING";
+      return `Por favor confirme:\n\nNome: ${chatState.bookingDetails.nomeCompleto
+        }\nNascimento: ${chatState.bookingDetails.dataNascimento}\nContacto: ${chatState.bookingDetails.contactoTelefonico
+        }\n${chatState.bookingType === "exam" ? "Exame" : "Consulta"}: ${chatState.bookingDetails.item
+        }\n\nEstá tudo correto? (Sim/Não)`;
+    }
+
+    function handleBookingItemInput(_, entities) {
+      let r = "";
+      if (entities.exam) {
+        chatState.bookingDetails.item = entities.exam;
+        chatState.bookingType = "exam";
+        r = `Confirmado: exame de ${entities.exam}.`;
+      } else if (entities.doctor) {
+        chatState.bookingDetails.item = entities.doctor.nome;
+        chatState.bookingType = "consultation";
+        r = `Consulta com ${entities.doctor.nome} (${entities.doctor.especialidade}).`;
+      } else if (entities.specialty) {
+        chatState.bookingDetails.item = entities.specialty;
+        chatState.bookingType = "consultation";
+        r = `Consulta na especialidade de ${entities.specialty}.`;
+      } else {
+        return "Não identifiquei o exame, médico ou especialidade. Pode reformular?";
+      }
+
+      if (
+        !chatState.bookingDetails.nomeCompleto ||
+        !chatState.bookingDetails.dataNascimento ||
+        !chatState.bookingDetails.contactoTelefonico
+      ) {
+        chatState.currentStep = "ASK_NAME";
+        return "Antes de confirmar a marcação, preciso de recolher os seus dados. Comecemos com o seu nome completo.";
+      }
+
+      chatState.currentStep = "CONFIRM_BOOKING";
+      return `${r}\n\nConfirme os dados:\nNome: ${chatState.bookingDetails.nomeCompleto}\nNascimento: ${chatState.bookingDetails.dataNascimento}\nContacto: ${chatState.bookingDetails.contactoTelefonico}\n\nEstá tudo correto? (Sim/Não)`;
+    }
+
+    async function handleBookingConfirmation(intent) {
+      // O log de DEBUG que adicionou já nos ajudou a encontrar o problema
+      console.log(
+        "DEBUG [INÍCIO de handleBookingConfirmation]: bookingDetails contém:",
+        JSON.parse(JSON.stringify(chatState.bookingDetails))
+      );
+
+      if (intent !== "CONFIRMATION_YES") {
+        // Se o utilizador não confirmar, cancelar tudo e recomeçar
+        chatState.currentStep = "AWAITING_INTENT";
+        chatState.bookingDetails = {};
+        chatState.bookingType = null;
+        chatState.lastMentioned = {
+          type: null,
+          value: null,
+          specialty: null,
+          doctorsListed: null,
+        };
+        return "Certo, a marcação foi cancelada. Em que posso ajudar mais?";
+      }
+
+      // --- LINHA DA CORREÇÃO ---
+      // Vamos desestruturar TODOS os campos que precisamos de bookingDetails
+      const {
+        nomeCompleto,
+        dataNascimento,
+        contactoTelefonico,
+        item,
+        doctor, // <-- Adicionado aqui
+        specialty, // <-- Adicionado aqui
+        exam, // <-- Adicionado aqui
+        protocol, // <-- Adicionado aqui
+      } = chatState.bookingDetails;
+      // --- FIM DA CORREÇÃO ---
+
+      // Verificar se os dados essenciais do utente foram recolhidos
+      if (!nomeCompleto || !dataNascimento || !contactoTelefonico || !item) {
+        chatState.currentStep = "AWAITING_INTENT";
+        return "Parece que faltam alguns dados essenciais. Poderia, por favor, tentar o processo de marcação novamente?";
+      }
+
+      // Criar o payload final com as variáveis que acabámos de extrair
+      const payload = {
+        nome: nomeCompleto,
+        nascimento: dataNascimento,
+        contacto: contactoTelefonico,
+        tipo: chatState.bookingType || "desconhecido",
+        medico: doctor || null, // Agora a variável 'doctor' existe e tem o valor correto
+        especialidade: specialty || null, // Agora a variável 'specialty' existe e tem o valor correto
+        exame: exam || null, // Agora a variável 'exam' existe e tem o valor correto
+        protocolo: protocol || null,
+        dataPedido: new Date(),
+        estado: "pendente",
+        obs: "",
+      };
+
+      console.log(
+        "DEBUG: Payload FINAL a ser enviado:",
+        JSON.parse(JSON.stringify(payload))
+      );
+
+      try {
+        const res = await fetch(`${BASE_URL}/marcacao`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        // Limpar o estado da marcação
+        chatState.currentStep = "AWAITING_INTENT";
+        chatState.bookingDetails = {};
+        chatState.bookingType = null;
+        chatState.lastMentioned = {
+          type: null,
+          value: null,
+          specialty: null,
+          doctorsListed: null,
+        };
+
+        if (!res.ok) {
+          return `Ocorreu um erro ao registar a sua marcação (código ${res.status}). Por favor, tente mais tarde.`;
+        }
+
+        return "A sua marcação foi registada com sucesso! Entraremos em contacto em breve para confirmação final. Em que mais posso ajudar?";
+      } catch (e) {
+        console.error("Erro de comunicação com o servidor em /marcacao:", e);
+        // Limpar o estado em caso de erro de rede
+        chatState.currentStep = "AWAITING_INTENT";
+        // ...
+        return "Ocorreu um erro de comunicação ao tentar registar a sua marcação.";
+      }
+    }
+
+    function provideInformation(entities, originalText) {
+      if (entities.generalGreeting) {
+        chatState.currentStep = "AWAITING_INTENT";
+        return "Olá! Sou a Elvira, assistente virtual do Hospital António Lopes. Em que posso ajudar?";
+      }
+
+      if (entities.requestUrgencyInfo) {
+        chatState.currentStep = "AWAITING_INTENT";
+        return "Não dispomos de um Serviço de Urgência tradicional. No entanto, temos um serviço de Consulta Aberta 24h, disponível sem necessidade de marcação prévia, destinado à resolução de situações agudas que não requerem atendimento de urgência hospitalar. Este serviço é assegurado por médicos de Clínica Geral e Medicina Interna, apoiados por uma equipa de enfermagem e técnicos especializados.";
+      }
+
+      if (entities.requestAllServices) {
+        chatState.currentStep = "AWAITING_INTENT";
+        if (halServicos && Object.keys(halServicos).length > 0) {
+          // Assume que as chaves de halServicos são os nomes dos serviços
+          const serviceNames = Object.keys(halServicos).map(
+            (s) => `- ${s.replace(/\b\w/g, (l) => l.toUpperCase())}`
+          );
+          return `Oferecemos os seguintes serviços:\n${serviceNames.join(
+            "\n"
+          )}\nPode pedir mais informações sobre um serviço específico, se desejar.`;
+        } else {
+          return "De momento, não consigo listar os nossos serviços. Por favor, contacte o hospital para mais informações.";
+        }
+      }
+
+      if (entities.doctorNotFoundButSpecialtyMentioned) {
+        chatState.currentStep = "AWAITING_INTENT";
+        return "Não foi possível encontrar o médico que indicou, ou o médico não corresponde à especialidade mencionada. Pode tentar de novo o nome do médico, ou indicar apenas a especialidade se desejar marcar uma consulta.";
+      }
+
+      if (entities.location) {
+        chatState.currentStep = "AWAITING_INTENT";
+        return "O Hospital António Lopes fica na Rua da Misericórdia 141, Apartado 143, 4830-503 Póvoa de Lanhoso.";
+      }
+
+      // Informações SIGIC
+      if (
+        entities.sigicSpecialties &&
+        halSigic[normalizeText("Especialidades com acordo")]
+      ) {
+        chatState.currentStep = "AWAITING_INTENT";
+        return `As especialidades com acordo SIGIC são:\n${halSigic[normalizeText("Especialidades com acordo")]
+          }`;
+      }
+      if (
+        entities.sigicConditions &&
+        halSigic[
+        normalizeText("Condições/Porquê escolher o Hospital António Lopes")
+        ]
+      ) {
+        chatState.currentStep = "AWAITING_INTENT";
+        return `Aqui estão as razões para escolher o Hospital António Lopes para o seu SIGIC:\n${halSigic[
+          normalizeText(
+            "Condições/Porquê escolher o Hospital António Lopes"
+          )
+          ]
+          }`;
+      }
+      if (entities.sigicInfo && halSigic[normalizeText("SIGIC")]) {
+        chatState.currentStep = "AWAITING_INTENT";
+        return halSigic[normalizeText("SIGIC")];
+      }
+
+      // Contactos
+      if (entities.contactService) {
+        const contact = halContactos[entities.contactService];
+        if (contact) {
+          chatState.currentStep = "AWAITING_INTENT";
+          const formattedService = entities.contactService.replace(
+            /\b\w/g,
+            (l) => l.toUpperCase()
+          );
+          return `O contacto para ${formattedService} é: ${contact}`;
+        }
+      }
+      if (entities.requestForContact && !entities.contactService) {
+        chatState.currentStep = "AWAITING_INTENT";
+        return `Não encontrei um contacto específico para "${originalText
+          .replace(/contacto|numero|telefone|ligar|contactar/gi, "")
+          .trim()}". O nosso contacto geral é <a href="tel:+351253639035" class="call-button">📞 +351 253 639 035</a>.`;
+      }
+
+      // Serviços (informação geral)
+      if (entities.serviceInfo && halServicos[entities.serviceInfo]) {
+        chatState.currentStep = "AWAITING_INTENT";
+        const formattedService = entities.serviceInfo.replace(/\b\w/g, (l) =>
+          l.toUpperCase()
+        );
+        return `Informação sobre ${formattedService}: ${halServicos[entities.serviceInfo]
+          }.`;
+      }
+
+      // Lógica de marcação - Perguntas de seguimento que definem lastMentioned
+
+      // SE A INTENÇÃO PRINCIPAL FOR SOBRE UMA ESPECIALIDADE (E NÃO UM MÉDICO/EXAME ESPECÍFICO AINDA)
+      if (
+        entities.specialty &&
+        !entities.doctor &&
+        !entities.exam &&
+        !entities.agreement
+      ) {
+        const doctorsForSpecialtyObjects = allDoctors.filter((m) =>
+          normalizeText(m.especialidade).includes(
+            normalizeText(entities.specialty)
+          )
+        );
+
+        if (doctorsForSpecialtyObjects.length > 0) {
+          const doctorsInSpecialtyText = doctorsForSpecialtyObjects
+            .map((m) => `- Dr(a). ${m.nome}`) // Apenas nomes para a mensagem
+            .join("\n");
+
+          chatState.lastMentioned = {
+            type: "awaiting_doctor_or_general_specialty_choice", // Contexto para a próxima etapa
+            value: entities.specialty, // A especialidade em questão
+            doctorsListed: doctorsForSpecialtyObjects, // Lista de objetos de médicos para validação na próxima etapa
+          };
+          chatState.currentStep = "AWAITING_DOCTOR_CHOICE"; // Define o estado para esperar a escolha do médico
+
+          return `Temos consultas de ${entities.specialty} com os seguintes médicos:\n${doctorsInSpecialtyText}\nDeseja agendar com algum deles ou não tem preferência no profissional?`;
+        } else {
+          // Não há médicos específicos para listar para esta especialidade, mas a especialidade é válida
+          chatState.lastMentioned = {
+            type: "specialty",
+            value: entities.specialty,
+          };
+          // Não muda currentStep aqui, a resposta "sim/não" do utilizador será tratada por handleInitialIntent
+          return `Sim, temos a especialidade de ${entities.specialty}. Deseja marcar uma consulta nesta especialidade?`;
+        }
+      }
+
+      // SE UM MÉDICO FOI DIRETAMENTE PEDIDO (E NÃO APENAS UMA ESPECIALIDADE)
+      if (entities.doctor) {
+        chatState.lastMentioned = {
+          type: "doctor",
+          value: entities.doctor.nome,
+          specialty: entities.doctor.especialidade, // Guarda a especialidade do médico
+        };
+        return `Sim, o/a Dr(a). ${entities.doctor.nome} (${entities.doctor.especialidade}) trabalha connosco. Deseja marcar uma consulta?`;
+      }
+
+      // SE UM EXAME FOI PEDIDO
+      if (entities.exam) {
+        // entities.exam já deve conter o examAnalysis se este for mais específico
+        chatState.lastMentioned = { type: "exam", value: entities.exam };
+        return `Sim, realizamos o exame "${entities.exam}". Deseja marcar este exame?`;
+      }
+
+      // SE UM ACORDO FOI MENCIONADO COM INTENÇÃO DE MARCAÇÃO IMPLÍCITA
+      if (entities.agreement) {
+        chatState.lastMentioned = {
+          type: "agreement",
+          value: entities.agreement,
+        };
+        return `Sim, temos acordo com ${entities.agreement}. Deseja agendar algo (consulta/exame) utilizando este acordo?`;
+      }
+
+      // Se nenhuma das condições acima foi satisfeita (nenhuma info direta ou pergunta de seguimento),
+      // retorna uma string vazia. sendMessage irá então chamar handleInitialIntent.
+      return "";
+    }
+
+    async function fetchFallbackResponse(msg) {
+      console.log("fetchFallbackResponse chamada com:", msg);
+      chatState.currentStep = "AWAITING_INTENT"; // Reset step
+      return "Peço desculpa, não consegui entender completamente. Pode tentar reformular a sua questão? Posso ajudar com marcações, informações sobre o hospital, médicos, exames ou acordos.";
+    }
+
+    initChatbot();
+    async function initChatbot() {
+      const loadDataSuccess = await loadData();
+      if (loadDataSuccess !== false) {
+        appendMessage(
+          "Olá! Sou a Elvira, assistente virtual do Hospital António Lopes. Em que posso ajudar?",
+          "bot"
+        );
+        chatState.currentStep = "AWAITING_INTENT";
+      }
+    }
+  </script>
+</body>
+
+</html>

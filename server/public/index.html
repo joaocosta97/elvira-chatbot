@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chatbot Elvira - HAL</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Poppins", sans-serif;
+        margin: 0;
+        background-color: #f8f9fa;
+      }
+      #chatbot-toggle {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background-color: #26a7b5;
+        color: white;
+        border: none;
+        border-radius: 50px;
+        padding: 12px 20px;
+        font-size: 14px;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+        cursor: pointer;
+        transition: background-color 0.3s;
+        z-index: 1000;
+      }
+      #chatbot-toggle:hover {
+        background-color: #26a7b5;
+      }
+      #chatbot-box {
+        position: fixed;
+        bottom: 80px;
+        right: 24px;
+        width: 380px;
+        height: 520px;
+        display: none;
+        flex-direction: column;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+        overflow: hidden;
+        z-index: 999;
+        animation: fadeIn 0.3s ease-in-out;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      #chatbot-header {
+        background-color: #26a7b5;
+        color: white;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        position: relative;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        cursor: pointer;
+      }
+
+      #chatbot-header .left {
+        position: absolute;
+        left: 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      #chatbot-header img {
+        height: 36px;
+      }
+
+      #chatbot-header .title {
+        margin: 0 auto;
+        font-weight: 600;
+        font-size: 18px;
+        text-align: center;
+      }
+
+      #minimize-button {
+        background: transparent;
+        border: none;
+        color: white;
+        font-size: 20px;
+        cursor: pointer;
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+      }
+
+      #chatbot-messages {
+        flex: 1;
+        padding: 16px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        background-color: #f0f2f5;
+        scroll-behavior: smooth;
+      }
+
+      .message {
+        padding: 10px 14px;
+        border-radius: 16px;
+        font-size: 14px;
+        line-height: 1.5;
+        max-width: 80%;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        animation: slideUp 0.3s ease;
+      }
+
+      @keyframes slideUp {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .bot {
+        background: #e6f7ff;
+        align-self: flex-start;
+        color: #003d5c;
+      }
+
+      .user {
+        background: #dcf8c6;
+        align-self: flex-end;
+        color: #1c1c1c;
+      }
+
+      .typing {
+        position: relative;
+        font-style: italic;
+        color: #666;
+      }
+      .typing::after {
+        content: ".";
+        animation: dots 1s steps(3, end) infinite;
+        position: absolute;
+        margin-left: 5px;
+      }
+      @keyframes dots {
+        0% {
+          content: ".";
+        }
+        33% {
+          content: "..";
+        }
+        66% {
+          content: "...";
+        }
+        100% {
+          content: ".";
+        }
+      }
+
+      #chatbot-input {
+        display: flex;
+        border-top: 1px solid #ddd;
+        padding: 10px;
+        background: white;
+      }
+
+      #chatbot-input input {
+        flex: 1;
+        border: 1px solid #ccc;
+        padding: 10px 14px;
+        border-radius: 25px;
+        font-size: 14px;
+        outline: none;
+        background-color: #fff;
+        transition: all 0.2s ease;
+      }
+
+      #chatbot-input input:focus {
+        border-color: #26a7b5;
+      }
+
+      #chatbot-input button {
+        background: #26a7b5;
+        border: none;
+        color: white;
+        margin-left: 10px;
+        padding: 10px 16px;
+        border-radius: 25px;
+        cursor: pointer;
+        transition: background-color 0.3s;
+      }
+
+      #chatbot-input button:hover {
+        background-color: #26a7b5;
+      }
+
+      @media (max-width: 600px) {
+        #chatbot-box {
+          width: 95%;
+          right: 2.5%;
+          bottom: 90px;
+          height: 90vh;
+        }
+      }
+
+      .call-button {
+        display: none; /* Oculto por padrão */
+        background-color: #25d366;
+        color: white;
+        border: none;
+        padding: 10px 16px;
+        border-radius: 25px;
+        font-weight: bold;
+        text-align: center;
+        text-decoration: none;
+        margin-top: 10px;
+        max-width: 200px;
+      }
+
+      /* Só mostra o botão se for mobile */
+      @media (max-width: 768px) {
+        .call-button {
+          display: inline-block;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <button id="chatbot-toggle">💬 Converse com a Elvira</button>
+    <div id="chatbot-box">
+      <div id="chatbot-header">
+        <div class="left">
+          <img src="./LOGO_HAL.svg" alt="Logo HAL" />
+        </div>
+        <div class="title">Elvira</div>
+        <button id="minimize-button">−</button>
+      </div>
+      <div id="chatbot-messages">
+        <div class="message bot">
+          Olá! Sou a Elvira, assistente virtual do Hospital António Lopes. Em
+          que posso ajudar?
+        </div>
+      </div>
+      <div id="chatbot-input">
+        <input type="text" id="user-input" placeholder="Escreva aqui..." />
+        <button onclick="sendMessage()">➤</button>
+      </div>
+    </div>
+    <script>
+      const toggle = document.getElementById("chatbot-toggle");
+      const box = document.getElementById("chatbot-box");
+      const minimize = document.getElementById("minimize-button");
+      const messages = document.getElementById("chatbot-messages");
+      const input = document.getElementById("user-input");
+      const BASE_URL = "https://elvira-chatbot-production.up.railway.app";
+
+      let historico = [];
+      let etapaMarcacao = null;
+      let etapaMarcacaoExame = null;
+      let dadosMarcacao = {};
+      let dadosExame = {};
+      let listaMedicos = [];
+      let examesValidos = [];
+      let exameConfirmadoPendente = null;
+
+      let ultimoMedicoMencionado = null;
+      let ultimaEspecialidadeReconhecida = null;
+      let ultimoExameMencionado = null;
+      let ultimoProtocoloMencionado = null;
+
+      const especialidadesValidas = [
+        "angiologia e cirurgia vascular",
+        "cardiologia",
+        "cirurgia geral",
+        "cirurgia plástica, reconstrutiva e estética",
+        "dermatologia",
+        "endocrinologia",
+        "medicina física e de reabilitação",
+        "fisiatria",
+        "fisioterapia",
+        "gastrenterologia",
+        "ginecologia e obstetrícia",
+        "imunoalergologia",
+        "medicina dentária",
+        "medicina interna",
+        "oftalmologia",
+        "ortopedia",
+        "otorrinolaringologia",
+        "pediatria",
+        "pneumologia",
+        "alergologia respiratória",
+        "psicologia",
+        "psiquiatria",
+        "reumatologia",
+        "urologia",
+        "nutrição",
+        "podologia",
+        "terapia da fala",
+      ];
+
+      const protocolosValidos = [
+        "ADSE",
+        "Multicare",
+        "Médis",
+        "AdvanceCare",
+        "SAMS",
+        "Seguro Fidelidade",
+        "Seguro Tranquilidade",
+        "SIGIC",
+      ];
+
+      fetch("dados/exames.json")
+        .then((res) => res.json())
+        .then((data) => (examesValidos = data))
+        .catch((err) => console.error("Erro ao carregar exames:", err));
+
+      fetch("dados/medicos.json")
+        .then((res) => res.json())
+        .then((data) => (listaMedicos = data))
+        .catch((err) => console.error("Erro ao carregar médicos:", err));
+
+      toggle.addEventListener("click", () => {
+        box.style.display = "flex";
+        box.style.flexDirection = "column";
+        toggle.style.display = "none";
+        setTimeout(() => (messages.scrollTop = messages.scrollHeight), 100);
+      });
+
+      minimize.addEventListener("click", () => {
+        box.style.display = "none";
+        toggle.style.display = "inline-block";
+      });
+
+      input.addEventListener("keypress", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      async function sendMessage() {
+        const text = input.value.trim();
+        if (!text) return;
+
+        const userMsg = document.createElement("div");
+        userMsg.className = "message user";
+        userMsg.textContent = text;
+        messages.appendChild(userMsg);
+        historico.push({ role: "user", content: text });
+        input.value = "";
+
+        const botMsg = document.createElement("div");
+        botMsg.className = "message bot typing";
+        botMsg.textContent = "A escrever";
+        messages.appendChild(botMsg);
+        messages.scrollTop = messages.scrollHeight;
+
+        const normalizar = (str) =>
+          str
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/\./g, "")
+            .replace(/\bdr[ªa]?\b/g, "")
+            .trim();
+
+        const textoNormalizado = normalizar(text);
+
+        const confirmouMarcacao =
+          /^(sim|sim por favor|quero|quero sim|ok|pode ser)$/i.test(
+            textoNormalizado
+          );
+
+        if (
+          confirmouMarcacao &&
+          exameConfirmadoPendente &&
+          !etapaMarcacao &&
+          !etapaMarcacaoExame
+        ) {
+          dadosExame.exame = exameConfirmadoPendente;
+          etapaMarcacaoExame = "nome";
+          exameConfirmadoPendente = null;
+          setTimeout(() => {
+            botMsg.textContent = `Perfeito. Pode indicar o seu nome completo para marcarmos o exame "${dadosExame.exame}"?`;
+            botMsg.classList.remove("typing");
+          }, 1000);
+          return;
+        }
+
+        const temIntencaoMarcacao =
+          /(quero|queria|gostava|preciso|gostaria|pretendo).*(marcar|agendar|consulta|consultar|fazer)/i.test(
+            text
+          );
+        const temIntencaoExame =
+          /(exame|exames|análise|análises|fazem|realizam)/i.test(text);
+
+        const medicoEncontrado = listaMedicos.find((med) =>
+          textoNormalizado.includes(normalizar(med.nome))
+        );
+        const especialidadeEncontrada = especialidadesValidas.find((espec) =>
+          textoNormalizado.includes(normalizar(espec))
+        );
+        const exameEncontrado = examesValidos.find((exame) =>
+          textoNormalizado.includes(normalizar(exame))
+        );
+        const protocoloEncontrado = protocolosValidos.find((prot) =>
+          textoNormalizado.includes(normalizar(prot))
+        );
+
+        if (medicoEncontrado) ultimoMedicoMencionado = medicoEncontrado;
+        if (especialidadeEncontrada)
+          ultimaEspecialidadeReconhecida = especialidadeEncontrada;
+        if (exameEncontrado) ultimoExameMencionado = exameEncontrado;
+        if (protocoloEncontrado)
+          ultimoProtocoloMencionado = protocoloEncontrado;
+
+        if (!etapaMarcacao && !etapaMarcacaoExame) {
+          const exameConfirmado = examesValidos.find(
+            (exame) =>
+              normalizar(exame).includes(textoNormalizado) ||
+              textoNormalizado.includes(normalizar(exame))
+          );
+          if (exameConfirmado) {
+            dadosExame.exame = exameConfirmado;
+            etapaMarcacaoExame = "nome";
+            setTimeout(() => {
+              botMsg.textContent = `Perfeito. Pode indicar o seu nome completo para marcarmos o exame "${exameConfirmado}"?`;
+              botMsg.classList.remove("typing");
+            }, 1000);
+            return;
+          }
+        }
+
+        if (
+          !etapaMarcacao &&
+          !etapaMarcacaoExame &&
+          temIntencaoExame &&
+          exameEncontrado
+        ) {
+          if (/quero|gostava|marcar|fazer|agendar|preciso/i.test(text)) {
+            dadosExame.exame = exameEncontrado;
+            etapaMarcacaoExame = "nome";
+            setTimeout(() => {
+              botMsg.textContent = `Muito bem, pretende marcar o exame "${exameEncontrado}". Pode indicar o seu nome completo?`;
+              botMsg.classList.remove("typing");
+            }, 1000);
+          } else {
+            exameConfirmadoPendente = exameEncontrado;
+            setTimeout(() => {
+              botMsg.textContent = `Sim, realizamos o exame "${exameEncontrado}". Deseja marcar?`;
+              botMsg.classList.remove("typing");
+            }, 1000);
+          }
+          return;
+        }
+
+        if (
+          !etapaMarcacao &&
+          !etapaMarcacaoExame &&
+          /quero.*exame/i.test(text) &&
+          !exameEncontrado
+        ) {
+          etapaMarcacaoExame = "aguarda_nome_exame";
+          setTimeout(() => {
+            botMsg.textContent = "Claro. Qual o exame que deseja marcar?";
+            botMsg.classList.remove("typing");
+          }, 1000);
+          return;
+        }
+
+        if (etapaMarcacaoExame === "aguarda_nome_exame") {
+          const exameConfirmado = examesValidos.find(
+            (exame) =>
+              normalizar(exame).includes(textoNormalizado) ||
+              textoNormalizado.includes(normalizar(exame))
+          );
+          if (exameConfirmado) {
+            dadosExame.exame = exameConfirmado;
+            etapaMarcacaoExame = "nome";
+            setTimeout(() => {
+              botMsg.textContent = `Perfeito, deseja marcar o exame "${exameConfirmado}". Pode indicar o seu nome completo?`;
+              botMsg.classList.remove("typing");
+            }, 1000);
+          } else {
+            etapaMarcacaoExame = null;
+            setTimeout(() => {
+              botMsg.textContent =
+                "Pedimos desculpa mas não realizamos esse tipo de exames.";
+              botMsg.classList.remove("typing");
+            }, 1000);
+          }
+          return;
+        }
+
+        // FLUXO DE MARCAÇÃO DE EXAMES
+        if (
+          !etapaMarcacao &&
+          !etapaMarcacaoExame &&
+          temIntencaoExame &&
+          exameEncontrado
+        ) {
+          if (/quero|gostava|marcar|fazer|agendar|preciso/i.test(text)) {
+            dadosExame.exame = exameEncontrado;
+            etapaMarcacaoExame = "nome";
+            setTimeout(() => {
+              botMsg.textContent = `Muito bem, pretende marcar o exame "${exameEncontrado}". Pode indicar o seu nome completo?`;
+              botMsg.classList.remove("typing");
+            }, 1000);
+          } else {
+            exameConfirmadoPendente = exameEncontrado;
+            setTimeout(() => {
+              botMsg.textContent = `Sim, realizamos o exame "${exameEncontrado}". Deseja marcar?`;
+              botMsg.classList.remove("typing");
+            }, 1000);
+          }
+          return;
+        }
+
+        if (
+          !etapaMarcacao &&
+          !etapaMarcacaoExame &&
+          /quero.*exame/i.test(text) &&
+          !exameEncontrado
+        ) {
+          etapaMarcacaoExame = "aguarda_nome_exame";
+          setTimeout(() => {
+            botMsg.textContent = "Claro. Qual o exame que deseja marcar?";
+            botMsg.classList.remove("typing");
+          }, 1000);
+          return;
+        }
+
+        if (etapaMarcacaoExame === "aguarda_nome_exame") {
+          const exameConfirmado = examesValidos.find((exame) =>
+            normalizar(exame).includes(textoNormalizado)
+          );
+
+          if (exameConfirmado) {
+            dadosExame.exame = exameConfirmado;
+            etapaMarcacaoExame = "nome";
+            setTimeout(() => {
+              botMsg.textContent = `Perfeito, deseja marcar o exame "${exameConfirmado}". Pode indicar o seu nome completo?`;
+              botMsg.classList.remove("typing");
+            }, 1000);
+          } else {
+            etapaMarcacaoExame = null;
+            setTimeout(() => {
+              botMsg.textContent =
+                "Pedimos desculpa mas não realizamos esse tipo de exames.";
+              botMsg.classList.remove("typing");
+            }, 1000);
+          }
+          return;
+        }
+
+        if (etapaMarcacaoExame === "nome") {
+          dadosExame.nome = text;
+          etapaMarcacaoExame = "nascimento";
+          setTimeout(() => {
+            botMsg.textContent =
+              "Pode indicar a sua data de nascimento? (DD/MM/AAAA)";
+            botMsg.classList.remove("typing");
+          }, 1000);
+          return;
+        }
+
+        if (etapaMarcacaoExame === "nascimento") {
+          dadosExame.nascimento = text;
+          etapaMarcacaoExame = "contacto";
+          setTimeout(() => {
+            botMsg.textContent =
+              "Por fim, pode indicar o seu contacto telefónico?";
+            botMsg.classList.remove("typing");
+          }, 1000);
+          return;
+        }
+
+        if (etapaMarcacaoExame === "contacto") {
+          const numeroLimpo = text.replace(/\D/g, "");
+          if (numeroLimpo.length < 9 || numeroLimpo.length > 15) {
+            setTimeout(() => {
+              botMsg.textContent =
+                "O número que indicou não é válido. Deve conter entre 9 e 15 dígitos.";
+              botMsg.classList.remove("typing");
+            }, 1000);
+            return;
+          }
+
+          dadosExame.contacto = text;
+          dadosExame.tipo = "exame";
+          etapaMarcacaoExame = null;
+
+          try {
+            const res = await fetch(`${BASE_URL}/marcacao`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(dadosExame),
+            });
+
+            setTimeout(() => {
+              botMsg.textContent = res.ok
+                ? "Obrigado! Será contactado para confirmar a sua marcação de exame."
+                : "Ocorreu um erro ao guardar a sua marcação.";
+              botMsg.classList.remove("typing");
+            }, 1000);
+          } catch (err) {
+            setTimeout(() => {
+              botMsg.textContent = "Erro ao contactar o servidor.";
+              botMsg.classList.remove("typing");
+            }, 1000);
+          }
+
+          dadosExame = {};
+          return;
+        }
+
+        // FLUXO DE MARCAÇÃO DE CONSULTAS
+        if (
+          !etapaMarcacao &&
+          /(ela|ele|isso|essa|esse)/i.test(text) &&
+          /(marcar|consulta|agendar|consultar|fazer)/i.test(text)
+        ) {
+          if (ultimoMedicoMencionado) {
+            dadosMarcacao.especialidade = ultimoMedicoMencionado.especialidade;
+            dadosMarcacao.medico = ultimoMedicoMencionado.nome;
+            etapaMarcacao = "nome";
+            setTimeout(() => {
+              botMsg.textContent = `Consulta com ${ultimoMedicoMencionado.nome} (${ultimoMedicoMencionado.especialidade})? Pode indicar o seu nome completo?`;
+              botMsg.classList.remove("typing");
+            }, 1000);
+            return;
+          }
+        }
+
+        if (!etapaMarcacao && temIntencaoMarcacao && medicoEncontrado) {
+          dadosMarcacao.especialidade = medicoEncontrado.especialidade;
+          dadosMarcacao.medico = medicoEncontrado.nome;
+          etapaMarcacao = "nome";
+          setTimeout(() => {
+            botMsg.textContent = `Consulta com ${medicoEncontrado.nome} (${medicoEncontrado.especialidade})? Pode indicar o seu nome completo?`;
+            botMsg.classList.remove("typing");
+          }, 1000);
+          return;
+        }
+
+        if (!etapaMarcacao && temIntencaoMarcacao && especialidadeEncontrada) {
+          dadosMarcacao.especialidade = especialidadeEncontrada;
+          etapaMarcacao = "nome";
+          setTimeout(() => {
+            botMsg.textContent = `Consulta de ${especialidadeEncontrada}? Pode indicar o seu nome completo?`;
+            botMsg.classList.remove("typing");
+          }, 1000);
+          return;
+        }
+
+        if (!etapaMarcacao && medicoEncontrado) {
+          setTimeout(() => {
+            botMsg.textContent = `Sim, ${medicoEncontrado.nome} dá consultas de ${medicoEncontrado.especialidade} no Hospital António Lopes.`;
+            botMsg.classList.remove("typing");
+          }, 1000);
+          return;
+        }
+
+        if (!etapaMarcacao && especialidadeEncontrada) {
+          setTimeout(() => {
+            botMsg.textContent = `Sim, temos consultas de ${especialidadeEncontrada}. Deseja marcar?`;
+            botMsg.classList.remove("typing");
+          }, 1000);
+          return;
+        }
+
+        if (!etapaMarcacao && protocoloEncontrado) {
+          setTimeout(() => {
+            botMsg.textContent = `Sim, temos acordo com ${protocoloEncontrado}. Pretende marcar ou saber mais?`;
+            botMsg.classList.remove("typing");
+          }, 1000);
+          return;
+        }
+
+        if (etapaMarcacao === "nome") {
+          dadosMarcacao.nome = text;
+          etapaMarcacao = "nascimento";
+          setTimeout(() => {
+            botMsg.textContent =
+              "Perfeito! Pode indicar a sua data de nascimento? (DD/MM/AAAA)";
+            botMsg.classList.remove("typing");
+          }, 1000);
+          return;
+        }
+
+        if (etapaMarcacao === "nascimento") {
+          dadosMarcacao.nascimento = text;
+          etapaMarcacao = "contacto";
+          setTimeout(() => {
+            botMsg.textContent =
+              "Muito bem! Por fim, pode indicar o seu contacto telefónico?";
+            botMsg.classList.remove("typing");
+          }, 1000);
+          return;
+        }
+
+        if (etapaMarcacao === "contacto") {
+          const numeroLimpo = text.replace(/\D/g, "");
+          if (numeroLimpo.length < 9 || numeroLimpo.length > 15) {
+            setTimeout(() => {
+              botMsg.textContent =
+                "O número que indicou não é válido. Deve conter entre 9 e 15 dígitos.";
+              botMsg.classList.remove("typing");
+            }, 1000);
+            return;
+          }
+
+          dadosMarcacao.contacto = text;
+          etapaMarcacao = null;
+
+          try {
+            const res = await fetch(`${BASE_URL}/marcacao`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(dadosMarcacao),
+            });
+
+            setTimeout(() => {
+              botMsg.textContent = res.ok
+                ? "Obrigado! Será contactado para confirmar a sua marcação."
+                : "Ocorreu um erro ao guardar a sua marcação.";
+              botMsg.classList.remove("typing");
+            }, 1000);
+          } catch (err) {
+            setTimeout(() => {
+              botMsg.textContent = "Erro ao contactar o servidor.";
+              botMsg.classList.remove("typing");
+            }, 1000);
+          }
+
+          dadosMarcacao = {};
+          return;
+        }
+
+        if (text.toLowerCase().includes("falar com um assistente")) {
+          botMsg.remove();
+          const botMsgAlt = document.createElement("div");
+          botMsgAlt.className = "message bot";
+          const link = document.createElement("a");
+          link.href = "tel:+351253639035";
+          link.className = "call-button";
+          link.textContent = "📞 Ligar agora";
+          botMsgAlt.innerHTML =
+            "Pode contactar a nossa equipa diretamente:<br>";
+          botMsgAlt.appendChild(link);
+          messages.appendChild(botMsgAlt);
+          return;
+        }
+
+        // fallback para mensagem via IA
+        try {
+          const res = await fetch(`${BASE_URL}/mensagem`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mensagem: text,
+              historico,
+              contexto: {
+                medico: ultimoMedicoMencionado?.nome || null,
+                especialidade: ultimaEspecialidadeReconhecida || null,
+                exame: ultimoExameMencionado || null,
+                protocolo: ultimoProtocoloMencionado || null,
+              },
+            }),
+          });
+
+          const data = await res.json();
+          setTimeout(() => {
+            botMsg.textContent =
+              data.resposta || "Desculpe, não consegui compreender.";
+            historico.push({ role: "assistant", content: botMsg.textContent });
+            botMsg.classList.remove("typing");
+            messages.scrollTop = messages.scrollHeight;
+          }, 1000);
+        } catch (err) {
+          setTimeout(() => {
+            botMsg.textContent = "Erro ao contactar o servidor.";
+            botMsg.classList.remove("typing");
+          }, 1000);
+        }
+      }
+    </script>
+  </body>
+</html>
